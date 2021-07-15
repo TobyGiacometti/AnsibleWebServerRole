@@ -1,0 +1,117 @@
+- name: Verify all hosts
+  hosts: all
+  vars_files:
+    - ../../vars/main.yml
+  pre_tasks:
+    - name: Install packages
+      apt:
+        name: curl
+        update_cache: true
+
+    - name: Create PNG resource
+      file:
+        path: /var/www/www.domain2.test/{% if inventory_hostname == 'full-host' %}www/{% endif %}/test.png
+        state: touch
+
+    - name: Create PHP resource
+      copy:
+        dest: /var/www/www.domain2.test/{% if inventory_hostname == 'full-host' %}www/{% endif %}/test.php
+        content: <?php echo "test" ?>
+  tasks:
+    - name: Retrieve state of deployment user's SSH authorized keys
+      command: cat /home/{{ web_server_deploy_user }}/.ssh/authorized_keys
+      register: authorized_keys_cat_result
+
+    - name: Retrieve state of cron jobs
+      command: crontab -l
+      failed_when: false
+      register: crontab_result
+
+    - name: Retrieve state of Apache site conf
+      stat:
+        path: /etc/apache2/sites-available/sites.conf
+      register: site_conf_stat_result
+
+    - name: Retrieve state of default document root directory
+      stat:
+        path: /var/www/www.domain2.test
+      register: doc_root_stat_result
+
+    - name: Retrieve state of general Apache confs
+      find:
+        file_type: link
+        paths:
+          - /etc/apache2/conf-enabled
+      register: conf_enabled_find_result
+
+    - name: Retrieve state of Apache site confs
+      find:
+        file_type: link
+        paths:
+          - /etc/apache2/sites-enabled
+      register: sites_enabled_find_result
+
+    - name: Retrieve state of HTTP resource https://www.domain2.test
+      command:
+        cmd: curl --dump-header - --insecure https://www.domain2.test
+        warn: false
+      register: https_curl_result
+      failed_when: false
+
+    - name: Retrieve state of HTTP resource http://www.domain2.test
+      command:
+        cmd: curl --dump-header - http://www.domain2.test
+        warn: false
+      register: http_curl_result
+
+    - name: Retrieve state of HTTP resource http://www.domain2.test/test.png
+      command:
+        cmd: curl --dump-header - --insecure --location http://www.domain2.test/test.png
+        warn: false
+      register: png_curl_result
+
+    - name: Retrieve state of HTTP resource http://www.domain2.test/test.php
+      command:
+        cmd: curl --dump-header - --insecure --location http://www.domain2.test/test.php
+        warn: false
+      register: php_curl_result
+
+    - name: Retrieve state of HTTP resource http://sub.domain2.test
+      command:
+        cmd: curl --dump-header - --insecure http://sub.domain2.test
+        warn: false
+      register: alt_domain_curl_result
+
+    - name: Run tests for full host
+      assert:
+        that:
+          - authorized_keys_cat_result.stdout is search(' test1$', multiline=True)
+          - authorized_keys_cat_result.stdout is search(' test2$', multiline=True)
+          - crontab_result.stdout is search('web_server_weekly_reload')
+          - site_conf_stat_result.stat.checksum == '0662c82f71db509ae27ea678017c9cbab0b6e719'
+          - doc_root_stat_result.stat.mode == '0750'
+          - conf_enabled_find_result.files|length == 1
+          - conf_enabled_find_result.files[0].path == '/etc/apache2/conf-enabled/base.conf'
+          - sites_enabled_find_result.files|length == 1
+          - sites_enabled_find_result.files[0].path == '/etc/apache2/sites-enabled/sites.conf'
+          - https_curl_result.stdout is search('HTTP/2')
+          - https_curl_result.stdout is search('The requested URL was not found on this server.')
+          - "https_curl_result.stdout is search('x-test1: test2')"
+          - "http_curl_result.stdout is search('Location: https://www.domain2.test')"
+          - "png_curl_result.stdout is search('cache-control: max-age=2592000')"
+          - php_curl_result.stdout is search('test$')
+          - "alt_domain_curl_result.stdout is search('Location: http://www.domain2.test')"
+      when: inventory_hostname == 'full-host'
+
+    - name: Run tests for minimal host
+      assert:
+        that:
+          - authorized_keys_cat_result.stdout is search('^ssh-ed25519 .+ ansible-generated on minimal-host$')
+          - crontab_result.stderr is search('no crontab for root')
+          - site_conf_stat_result.stat.checksum == '492057ce8edd85e3c64d27d23892b832bbbd1514'
+          - https_curl_result.stdout|length == 0
+          - http_curl_result.stdout is search('The requested URL was not found on this server.')
+          - png_curl_result.stdout is not search('cache-control:')
+          - php_curl_result.stdout is search('\?>$')
+          - alt_domain_curl_result.stdout is search('HTTP/1.1 404')
+      when: inventory_hostname == 'minimal-host'

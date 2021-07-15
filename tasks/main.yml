@@ -1,0 +1,5 @@
+- name: Include deployment user management tasks
+  include_tasks: manage_deploy_user.yml
+
+- name: Include web server management tasks
+  include_tasks: manage_web_server.yml

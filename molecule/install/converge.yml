@@ -1,0 +1,53 @@
+- name: Converge full host
+  hosts: full-host
+  roles:
+    - role: "{{ playbook_dir|dirname|dirname }}"
+      vars:
+        web_server_deploy_ssh_keys: |
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILLvN9CeszM2AVXN71S6oykDvK/zmcS5M4v9fUAFLS7W test1
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE2t3yUgO8zLwut+2asWzhcebhrnsKwUF4KBeB8SyhRS test2
+        web_server_sites:
+          - main_domain: www.domain1.test
+            alt_domains:
+              - domain1.test
+              - sub.domain1.test
+            doc_root: www
+            tls_cert_files:
+              cert: /etc/ssl/certs/ssl-cert-snakeoil.pem
+              key: /etc/ssl/private/ssl-cert-snakeoil.key
+            far_future_expires: true
+            extra_directives: |
+              Header always set X-Test1 "test1"
+              Header always set X-Test2 "test1"
+
+          - main_domain: www.domain2.test
+            alt_domains:
+              - domain2.test
+              - sub.domain2.test
+            doc_root: www
+            tls_cert_files:
+              cert: /etc/ssl/certs/ssl-cert-snakeoil.pem
+              key: /etc/ssl/private/ssl-cert-snakeoil.key
+            far_future_expires: true
+            extra_directives: |
+              Header always set X-Test1 "test2"
+              Header always set X-Test2 "test2"
+
+- name: Converge minimal host
+  hosts: minimal-host
+  roles:
+    - role: "{{ playbook_dir|dirname|dirname }}"
+      vars:
+        web_server_weekly_reload: false
+        web_server_sites:
+          - main_domain: www.domain1.test
+            alt_domains:
+              - sub.domain1.test
+            main_domain_redirect: false
+            php: false
+
+          - main_domain: www.domain2.test
+            alt_domains:
+              - sub.domain2.test
+            main_domain_redirect: false
+            php: false

@@ -1,0 +1,19 @@
+- name: Create deployment user
+  user:
+    name: "{{ web_server_deploy_user }}"
+    password: "*"
+    shell: /bin/bash
+    generate_ssh_key: true
+    ssh_key_type: ed25519
+  become: true
+  register: web_server_deploy_user_result
+
+# For the sake of simplicity, we use the key pair that was generated during user
+# creation if no SSH authorized keys were provided. This effectively disables SSH
+# access without having to run another task.
+- name: Manage SSH authorized keys for deployment user
+  authorized_key:
+    user: "{{ web_server_deploy_user }}"
+    exclusive: true
+    key: "{{ web_server_deploy_ssh_keys|default(web_server_deploy_user_result.ssh_public_key) }}"
+  become: true
