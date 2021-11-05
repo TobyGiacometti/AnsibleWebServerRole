@@ -1,0 +1,20 @@
+- name: Reload service apache2
+  listen: web_server_reload_handler
+  service:
+    name: apache2
+    state: reloaded
+  become: true
+
+- name: Restart service apache2
+  listen: web_server_restart_handler
+  service:
+    name: apache2
+    state: restarted
+  become: true
+
+- name: Start service php7.3-fpm
+  listen: web_server_php_start_handler
+  service:
+    name: php7.3-fpm
+    state: started
+  become: true

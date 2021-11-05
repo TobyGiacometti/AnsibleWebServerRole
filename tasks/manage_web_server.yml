@@ -1,0 +1,130 @@
+- name: Retrieve site main domains
+  set_fact:
+    web_server_site_main_domains: "{{ web_server_sites|map(attribute='main_domain')|list }}"
+  run_once: true
+
+- name: Ensure that site main domains are unique
+  fail:
+    msg: Site main domains must be unique
+  run_once: true
+  when: web_server_site_main_domains|count != web_server_site_main_domains|unique|count
+
+- name: Install packages
+  apt:
+    name:
+      - apache2
+      - php
+      - php-fpm
+      - cron
+    update_cache: true
+  become: true
+  notify: web_server_php_start_handler
+
+- name: Manage weekly reload cron job
+  cron:
+    job: /usr/bin/systemctl reload apache2
+    name: web_server_weekly_reload
+    special_time: weekly
+    state: "{{ web_server_weekly_reload|ternary('present', 'absent') }}"
+  become: true
+
+- name: Install general Apache confs
+  copy:
+    src: apache_conf/
+    dest: /etc/apache2/conf-available
+    mode: 0644
+  become: true
+  notify: web_server_reload_handler
+
+- name: Install Apache site confs
+  template:
+    src: sites.conf.j2
+    dest: /etc/apache2/sites-available/sites.conf
+    mode: 0644
+  become: true
+  notify: web_server_reload_handler
+
+- name: Create default document root directories
+  file:
+    state: directory
+    path: /var/www/{{ web_server_site.main_domain }}
+    owner: "{{ web_server_deploy_user }}"
+    group: www-data
+    mode: 0750
+  become: true
+  loop: "{{ web_server_sites }}"
+  loop_control:
+    loop_var: web_server_site
+
+- name: Create custom document root directories
+  file:
+    state: directory
+    path: /var/www/{{ web_server_site.main_domain }}/{{ web_server_site.doc_root }}
+    owner: "{{ web_server_deploy_user }}"
+    group: "{{ web_server_deploy_user }}"
+    mode: 0755
+  become: true
+  loop: "{{ web_server_sites }}"
+  loop_control:
+    loop_var: web_server_site
+  when: web_server_site.doc_root is defined
+
+- name: Disable Apache modules
+  command: a2dismod --force autoindex
+  become: true
+  register: web_server_a2dismod_result
+  changed_when: web_server_a2dismod_result.stdout is search('systemctl restart')
+  notify: web_server_restart_handler
+
+- name: Enable Apache modules
+  command: a2enmod expires headers http2 proxy_fcgi rewrite ssl
+  become: true
+  register: web_server_a2enmod_result
+  changed_when: web_server_a2enmod_result.stdout is search('systemctl restart')
+  notify: web_server_restart_handler
+
+- name: Disable general Apache confs
+  shell:
+    cmd: |
+      {% raw %}
+      shopt -s extglob nullglob
+      confs=(!(base.conf))
+      [[ ${#confs[@]} -eq 0 ]] && exit
+      a2disconf "${confs[@]}"
+      {% endraw %}
+    chdir: /etc/apache2/conf-enabled
+    executable: /bin/bash
+  become: true
+  register: web_server_a2disconf_result
+  changed_when: web_server_a2disconf_result.stdout is search('systemctl reload')
+  notify: web_server_reload_handler
+
+- name: Enable general Apache confs
+  command: a2enconf base
+  become: true
+  register: web_server_a2enconf_result
+  changed_when: web_server_a2enconf_result.stdout is search('systemctl reload')
+  notify: web_server_reload_handler
+
+- name: Disable Apache site confs
+  shell:
+    cmd: |
+      {% raw %}
+      shopt -s extglob nullglob
+      sites=(!(sites.conf))
+      [[ ${#sites[@]} -eq 0 ]] && exit
+      a2dissite "${sites[@]}"
+      {% endraw %}
+    chdir: /etc/apache2/sites-enabled
+    executable: /bin/bash
+  become: true
+  register: web_server_a2dissite_result
+  changed_when: web_server_a2dissite_result.stdout is search('systemctl reload')
+  notify: web_server_reload_handler
+
+- name: Enable Apache site confs
+  command: a2ensite sites
+  become: true
+  register: web_server_a2ensite_result
+  changed_when: web_server_a2ensite_result.stdout is search('systemctl reload')
+  notify: web_server_reload_handler

@@ -1,0 +1,45 @@
+{% for web_server_site in web_server_sites %}
+{% set web_server_site_conf %}
+        ServerName {{ web_server_site.main_domain }}
+{% if web_server_site.alt_domains|default([])|length > 0 %}
+        ServerAlias {{ web_server_site.alt_domains|join(' ') }}
+{% endif %}
+
+        DocumentRoot /var/www/{{ web_server_site.main_domain }}/{{ web_server_site.doc_root|default('') }}
+
+        ErrorLog ${APACHE_LOG_DIR}/{{ web_server_site.main_domain }}-error.log
+        CustomLog ${APACHE_LOG_DIR}/{{ web_server_site.main_domain }}-access.log combined
+
+{% if web_server_site.extra_directives|default('')|length > 0 %}
+{{ web_server_site.extra_directives|trim|indent(8, true) }}
+
+{% endif %}
+{% if web_server_site.php|default(true) %}
+        Include conf-available/php7.3-fpm.conf
+{% endif %}
+{% if web_server_site.main_domain_redirect|default(true) %}
+        Include conf-available/server-name-rewrite.conf
+{% endif %}
+{% if web_server_site.far_future_expires|default(false) %}
+        Include conf-available/far-future-expires.conf
+{% endif %}
+{% endset -%}
+
+<VirtualHost *:80>
+        {{ web_server_site_conf|trim }}
+{% if web_server_site.tls_cert_files is defined %}
+        Include conf-available/https-rewrite.conf
+{% endif %}
+</VirtualHost>
+
+{% if web_server_site.tls_cert_files is defined %}
+<VirtualHost *:443>
+        {{ web_server_site_conf|trim }}
+        Include conf-available/https.conf
+
+        SSLCertificateFile {{ web_server_site.tls_cert_files.cert }}
+        SSLCertificateKeyFile {{ web_server_site.tls_cert_files.key }}
+</VirtualHost>
+
+{% endif %}
+{% endfor %}
